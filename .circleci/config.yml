@@ -708,6 +708,8 @@ step-check-for-doc-only-change: &step-check-for-doc-only-change
       node script/yarn install --frozen-lockfile
       export DOC_ONLY_CHANGE="`node script/doc-only-change.js $CIRCLE_SHA1`"
       if [ "$DOC_ONLY_CHANGE" = "true" ]; then
+        echo $DOC_ONLY_CHANGE > .skip-ci-build
+      else
         touch .skip-ci-build
       fi
 
@@ -721,7 +723,7 @@ step-maybe-early-exit: &step-maybe-early-exit
   run:
     name: Shortcircuit build if doc only change
     command: |
-      if [ -f "src/electron/.skip-ci-build" ]; then
+      if [ -s src/electron/.skip-ci-build ]; then
         circleci-agent step halt
       fi
 
