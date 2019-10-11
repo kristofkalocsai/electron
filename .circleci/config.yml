@@ -739,7 +739,7 @@ step-ts-compile: &step-ts-compile
   run:
     name: Run TS/JS compile on doc only change
     command: |
-    cd src
+      cd src
       ninja -C out/Default electron:default_app_js -j $NUMBER_OF_NINJA_PROCESSES
       ninja -C out/Default electron:atom_js2c -j $NUMBER_OF_NINJA_PROCESSES
 
