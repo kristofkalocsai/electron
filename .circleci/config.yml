@@ -719,13 +719,29 @@ step-persist-doc-only-change: &step-persist-doc-only-change
     paths:
       - src/electron/.skip-ci-build
 
-step-maybe-early-exit: &step-maybe-early-exit
+step-maybe-early-exit-doc-only-change: &step-maybe-early-exit-doc-only-change
   run:
     name: Shortcircuit build if doc only change
     command: |
       if [ -s src/electron/.skip-ci-build ]; then
         circleci-agent step halt
       fi
+
+step-maybe-early-exit-no-doc-change: &step-maybe-early-exit-no-doc-change
+  run:
+    name: Shortcircuit job if change is not doc only
+    command: |
+      if [ ! -s src/electron/.skip-ci-build ]; then
+        circleci-agent step halt
+      fi
+
+step-ts-compile: &step-ts-compile
+  run:
+    name: Run TS/JS compile on doc only change
+    command: |
+    cd src
+      ninja -C out/Default electron:default_app_js -j $NUMBER_OF_NINJA_PROCESSES
+      ninja -C out/Default electron:atom_js2c -j $NUMBER_OF_NINJA_PROCESSES
 
 # Lists of steps.
 steps-lint: &steps-lint
@@ -777,7 +793,7 @@ steps-checkout-fast: &steps-checkout-fast
     - *step-checkout-electron
     - *step-check-for-doc-only-change
     - *step-persist-doc-only-change
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-get
     - *step-depot-tools-add-to-path
     - *step-restore-brew-cache
@@ -811,7 +827,7 @@ steps-checkout-and-save-cache: &steps-checkout-and-save-cache
     - *step-checkout-electron
     - *step-check-for-doc-only-change
     - *step-persist-doc-only-change
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-get
     - *step-depot-tools-add-to-path
     - *step-restore-brew-cache
@@ -842,7 +858,7 @@ steps-electron-gn-check: &steps-electron-gn-check
   steps:
     - attach_workspace:
         at: .
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-add-to-path
     - *step-setup-env-for-build
     - *step-gn-gen-default
@@ -852,7 +868,7 @@ steps-electron-build: &steps-electron-build
   steps:
     - attach_workspace:
         at: .
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-add-to-path
     - *step-setup-env-for-build
     - *step-restore-brew-cache
@@ -907,7 +923,7 @@ steps-electron-build-with-inline-checkout-for-tests: &steps-electron-build-with-
     - *step-checkout-electron
     - *step-check-for-doc-only-change
     - *step-persist-doc-only-change
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-get
     - *step-depot-tools-add-to-path
     - *step-restore-brew-cache
@@ -977,6 +993,45 @@ steps-electron-build-with-inline-checkout-for-tests: &steps-electron-build-with-
     - *step-maybe-trigger-arm-test
 
     - *step-maybe-notify-slack-failure
+
+steps-electron-ts-compile-for-doc-change: &steps-electron-ts-compile-for-doc-change
+  steps:
+    # Checkout - Copied ffrom steps-checkout
+    - *step-checkout-electron
+    - *step-check-for-doc-only-change
+    - *step-maybe-early-exit-no-doc-change
+    - *step-depot-tools-get
+    - *step-depot-tools-add-to-path
+    - *step-restore-brew-cache
+    - *step-get-more-space-on-mac
+    - *step-install-gnutar-on-mac
+    - *step-generate-deps-hash
+    - *step-touch-sync-done
+    - *step-maybe-restore-src-cache
+    - *step-maybe-restore-git-cache
+    - *step-set-git-cache-path
+    # This sync call only runs if .circle-sync-done is an EMPTY file
+    - *step-gclient-sync
+    # These next few steps reset Electron to the correct commit regardless of which cache was restored
+    - run:
+        name: Wipe Electron
+        command: rm -rf src/electron
+    - *step-checkout-electron
+    - *step-run-electron-only-hooks
+    - *step-generate-deps-hash-cleanly
+    - *step-mark-sync-done
+    - *step-minimize-workspace-size-from-checkout
+
+    - *step-depot-tools-add-to-path
+    - *step-setup-env-for-build
+    - *step-restore-brew-cache
+    - *step-get-more-space-on-mac
+    - *step-install-npm-deps-on-mac
+    - *step-fix-sync-on-mac
+    - *step-gn-gen-default
+
+    #Compile ts/js to verify doc change didn't break anything
+    - *step-ts-compile
 
 steps-electron-build-for-publish: &steps-electron-build-for-publish
   steps:
@@ -1095,7 +1150,7 @@ steps-tests: &steps-tests
   steps:
     - attach_workspace:
         at: .
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-add-to-path
     - *step-electron-dist-unzip
     - *step-mksnapshot-unzip
@@ -1138,7 +1193,7 @@ steps-test-nan: &steps-test-nan
   steps:
     - attach_workspace:
           at: .
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-add-to-path
     - *step-electron-dist-unzip
     - *step-setup-linux-for-headless-testing
@@ -1154,7 +1209,7 @@ steps-test-node: &steps-test-node
   steps:
     - attach_workspace:
           at: .
-    - *step-maybe-early-exit
+    - *step-maybe-early-exit-doc-only-change
     - *step-depot-tools-add-to-path
     - *step-electron-dist-unzip
     - *step-setup-linux-for-headless-testing
@@ -1179,6 +1234,12 @@ jobs:
     environment:
       <<: *env-linux-medium
     <<: *steps-lint
+
+  ts-compile-doc-change:
+    <<: *machine-linux-medium
+    environment:
+      <<: *env-linux-medium
+    <<: *steps-electron-ts-compile-for-doc-change
 
   # Layer 1: Checkout.
   linux-checkout-fast:
@@ -1951,6 +2012,7 @@ workflows:
       - linux-arm64-testing-gn-check:
           requires:
             - linux-checkout-fast
+      - ts-compile-doc-change
 
   build-mac:
     when: << pipeline.parameters.run-build-mac >>
